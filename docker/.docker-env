@@ -1,0 +1,30 @@
+# environment configuration for MAX emulation infrastructure
+# grafana Configuration
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=admin
+GRAFANA_REFRESH_INTERVAL=5s
+GRAFANA_DEFAULT_REFRESH=30s
+
+# prometheus Configuration
+PROMETHEUS_RETENTION_TIME=7d
+PROMETHEUS_RETENTION_SIZE=10GB
+PROMETHEUS_SCRAPE_INTERVAL=15s
+PROMETHEUS_EVALUATION_INTERVAL=15s
+
+# network Configuration
+MONITORING_NETWORK=max-monitoring
+
+# port configuration
+PUSHGATEWAY_PORT=9091
+PROMETHEUS_PORT=9090
+GRAFANA_PORT=3000
+
+# volume Names
+PROMETHEUS_VOLUME=max-prometheus-data
+GRAFANA_VOLUME=max-grafana-data
+PUSHGATEWAY_VOLUME=max-pushgateway-data
+
+# log Levels
+PROMETHEUS_LOG_LEVEL=info
+PUSHGATEWAY_LOG_LEVEL=info
+GRAFANA_LOG_LEVEL=info

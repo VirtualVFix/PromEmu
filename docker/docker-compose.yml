@@ -1,0 +1,97 @@
+services:
+  pushgateway:
+    build: ./pushgateway
+    container_name: max-pushgateway
+    ports:
+      - "${PUSHGATEWAY_PORT}:9091"
+    restart: unless-stopped
+    networks:
+      - monitoring
+    volumes:
+      - pushgateway_data:/data
+    command:
+      - --web.listen-address=0.0.0.0:9091
+      - --persistence.file=/data/pushgateway.db
+      - --persistence.interval=5m
+      - --log.level=${PUSHGATEWAY_LOG_LEVEL}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9091/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  prometheus:
+    build: ./prometheus
+    container_name: max-prometheus
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+    restart: unless-stopped
+    networks:
+      - monitoring
+    volumes:
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    environment:
+      - PROMETHEUS_SCRAPE_INTERVAL=${PROMETHEUS_SCRAPE_INTERVAL}
+      - PROMETHEUS_EVALUATION_INTERVAL=${PROMETHEUS_EVALUATION_INTERVAL}
+      - PROMETHEUS_RETENTION_TIME=${PROMETHEUS_RETENTION_TIME}
+      - PROMETHEUS_RETENTION_SIZE=${PROMETHEUS_RETENTION_SIZE}
+      - PROMETHEUS_LOG_LEVEL=${PROMETHEUS_LOG_LEVEL}
+    depends_on:
+      pushgateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  grafana:
+    build: ./grafana
+    container_name: max-grafana
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    restart: unless-stopped
+    networks:
+      - monitoring
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_LOG_LEVEL=${GRAFANA_LOG_LEVEL}
+      - GRAFANA_REFRESH_INTERVAL=${GRAFANA_REFRESH_INTERVAL}
+      - GRAFANA_DEFAULT_REFRESH=${GRAFANA_DEFAULT_REFRESH}
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  monitoring:
+    driver: bridge
+    name: ${MONITORING_NETWORK}
+
+volumes:
+  prometheus_data:
+    driver: local
+    name: ${PROMETHEUS_VOLUME}
+  grafana_data:
+    driver: local
+    name: ${GRAFANA_VOLUME}
+  pushgateway_data:
+    driver: local
+    name: ${PUSHGATEWAY_VOLUME}

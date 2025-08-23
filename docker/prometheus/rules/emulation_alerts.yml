@@ -1,0 +1,64 @@
+groups:
+  - name: emulated_hosts_alerts
+    rules:
+      - alert: HighCPUUsage
+        expr: cpu_usage_percent > 80
+        for: 2m
+        labels:
+          severity: warning
+          component: emulated_host
+        annotations:
+          summary: "High CPU usage on emulated host {{ $labels.host }}"
+          description: "CPU usage is {{ $value }}% on host {{ $labels.host }} ({{ $labels.host_ip }})"
+          
+      - alert: CriticalCPUUsage
+        expr: cpu_usage_percent > 95
+        for: 1m
+        labels:
+          severity: critical
+          component: emulated_host
+        annotations:
+          summary: "Critical CPU usage on emulated host {{ $labels.host }}"
+          description: "CPU usage is {{ $value }}% on host {{ $labels.host }} ({{ $labels.host_ip }})"
+          
+      - alert: HighMemoryUsage
+        expr: memory_usage_percent > 85
+        for: 3m
+        labels:
+          severity: warning
+          component: emulated_host
+        annotations:
+          summary: "High memory usage on emulated host {{ $labels.host }}"
+          description: "Memory usage is {{ $value }}% on host {{ $labels.host }} ({{ $labels.host_ip }})"
+          
+      - alert: HeavyTaskActive
+        expr: heavy_task_active == 1
+        for: 30s
+        labels:
+          severity: info
+          component: emulated_host
+        annotations:
+          summary: "Heavy task started on control server"
+          description: "Heavy computational task is now active on {{ $labels.host }}"
+          
+  - name: infrastructure_alerts
+    rules:
+      - alert: PushgatewayDown
+        expr: up{job="pushgateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Pushgateway is down"
+          description: "Pushgateway has been down for more than 1 minute"
+          
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Prometheus is down"
+          description: "Prometheus has been down for more than 1 minute"

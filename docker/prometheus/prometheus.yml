@@ -1,0 +1,51 @@
+global:
+  scrape_interval: ${PROMETHEUS_SCRAPE_INTERVAL}
+  evaluation_interval: ${PROMETHEUS_EVALUATION_INTERVAL}
+  external_labels:
+    monitor: 'max-emulation-monitor'
+    cluster: 'max-cluster'
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+    metrics_path: /metrics
+    
+  # Pushgateway - where our emulated metrics are pushed
+  - job_name: 'pushgateway'
+    static_configs:
+      - targets: ['pushgateway:9091']
+    scrape_interval: 10s
+    honor_labels: true
+    metrics_path: /metrics
+    
+  # Scrape all emulated hosts from pushgateway
+  - job_name: 'emulated_hosts'
+    static_configs:
+      - targets: ['pushgateway:9091']
+    scrape_interval: 10s
+    honor_labels: true
+    metrics_path: /metrics
+    # Relabel to identify emulated host metrics
+    metric_relabel_configs:
+      - source_labels: [job]
+        regex: 'emulated_host_(.*)'
+        target_label: 'emulated_host'
+        replacement: '${1}'
+      - source_labels: [host_ip]
+        target_label: 'instance'
+        replacement: '${1}'
+
+# Remote write configuration (optional, for long-term storage)
+# remote_write:
+#   - url: "http://your-remote-prometheus/api/v1/write"
