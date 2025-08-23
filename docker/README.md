@@ -1,6 +1,6 @@
-# MAX Emulation Docker Infrastructure
+# Prometheus Metrics Emulator (PromEmu) Docker Infrastructure
 
-This directory contains Docker configurations for a complete Prometheus monitoring stack to support the MAX metrics emulation system.
+This directory contains Docker configurations for a complete Prometheus monitoring stack to support the Prometheus Metrics Emulator (PromEmu).
 
 ## Table of Contents
 
@@ -55,7 +55,7 @@ This directory contains Docker configurations for a complete Prometheus monitori
 ## Services
 
 ### Pushgateway (Port 9091)
-- **Image**: `prom/pushgateway:v1.9.0`
+- **Image**: `prom/pushgateway:v1.11.1`
 - **Purpose**: Receives metrics from emulation script
 - **Features**:
   - Persistent storage with 5-minute intervals
@@ -63,18 +63,18 @@ This directory contains Docker configurations for a complete Prometheus monitori
   - Data persistence in Docker volume
 
 ### Prometheus (Port 9090)  
-- **Image**: `prom/prometheus:v2.54.1`
+- **Image**: `prom/prometheus:v3.5.0`
 - **Purpose**: Scrapes metrics from Pushgateway, stores time-series data
 - **Features**:
-  - 30-day retention policy
+  - 7-day retention policy
   - 10GB storage limit
   - Custom alerting rules for emulation metrics
   - API access for external tools
 
 ### Grafana (Port 3000)
-- **Image**: `grafana/grafana:11.2.0`
+- **Image**: `grafana/grafana:12.1.0`
 - **Purpose**: Visualization and dashboards
-- **Credentials**: `admin` / `admin123`
+- **Credentials**: `admin` / `admin`
 - **Features**:
   - Pre-configured Prometheus datasource
   - Automatic dashboard provisioning
@@ -99,7 +99,7 @@ docker-compose up -d --build
 ### Access Services
 - **Pushgateway**: http://localhost:9091
 - **Prometheus**: http://localhost:9090
-- **Grafana**: http://localhost:3000 (admin/admin123)
+- **Grafana**: http://localhost:3000 (admin/admin)
 
 ### Check Status
 ```bash
@@ -115,6 +115,7 @@ The `manage.sh` script provides convenient management commands:
 ./manage.sh stop      # Stop all services  
 ./manage.sh restart   # Restart all services
 ./manage.sh status    # Show service status
+./manage.sh config    # Show current configuration
 ./manage.sh logs      # Show all logs
 ./manage.sh logs grafana  # Show specific service logs
 ./manage.sh backup    # Backup data volumes
@@ -136,7 +137,7 @@ The `manage.sh` script provides convenient management commands:
 - `prometheus/Dockerfile` - Custom build with config files
 - `prometheus/prometheus.yml` - Main configuration
 - `prometheus/rules/emulation_alerts.yml` - Alerting rules
-- Scrapes Pushgateway every 10 seconds
+- Scrapes Pushgateway every 15 seconds (configurable)
 
 ### Grafana
 - `grafana/Dockerfile` - Custom build with plugins
@@ -248,8 +249,8 @@ docker stats
 # Check volume sizes
 docker system df -v
 
-# Reduce Prometheus retention
-# Edit prometheus.yml: --storage.tsdb.retention.time=7d
+# Reduce Prometheus retention (current default: 7d)
+# Edit .docker-env: PROMETHEUS_RETENTION_TIME=3d
 ```
 
 ### Reset Everything
