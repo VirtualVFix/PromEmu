@@ -79,22 +79,16 @@ pip install prometheus-client
 ```bash
 # list available configurations
 PYTHONPATH=. python main.py --list-configs
-
 # run with a specific configuration
 PYTHONPATH=. python main.py --config hosts_load_with_peaks
-
 # run with specific class from config
 PYTHONPATH=. python main.py --config hosts_load_with_peaks --class HostsLoadWithPeaksConfig
-
 # run with config arguments (passed to build method)
 PYTHONPATH=. python main.py --config hosts_load_with_peaks --config-args hosts_count=5 hosts_ttl=600
-
 # custom pushgateway URL
 PYTHONPATH=. python main.py --config single_host_load --pushgateway-url http://your-pushgateway:9091
-
 # custom push interval
 PYTHONPATH=. python main.py --config single_host_load --push-interval 10.0
-
 # custom status report interval (default: 30 seconds)
 PYTHONPATH=. python main.py --config single_host_load --status-interval 10
 ```
@@ -198,9 +192,9 @@ Create a new file in `configs/your_config.py`:
 ```python
 from typing import Any
 from core.emulation.hosts import HostConfig
+from configs.base import BaseEmulatorConfig
 from core.emulation.mixer import MixerConfig
 from core.emulation.metrics import MetricConfig, MetricType, Scenarios
-from configs.base import BaseEmulatorConfig
 
 class YourConfig(BaseEmulatorConfig):
     '''Your custom configuration class.'''
@@ -241,24 +235,57 @@ Then run with: `PYTHONPATH=. python main.py --config your_config`
 
 ```python
 from core.emulation.hosts import HostConfig
+from core.emulation.events import EmulatorEventBus
 from core.emulation.metrics import MetricConfig, Scenarios
 
 host_config = HostConfig(
-    name='web-server-01',
+    name='balancer-1',       # host name for logs and metric labels
     host='server01.prod.company.com',  # optional, auto-generated if not provided
     ttl=1800.0,              # 30 minutes
     interval=15.0,           # reporting interval in seconds
     job_name='web-servers',  # pushgateway job name (optional, uses default if empty)
-    labels={'role': 'web', 'datacenter': 'east'},
-    listen_events={},        # event handlers (optional)
+    labels={'role': 'web', 'datacenter': 'east'}, # optional, additional labels for metrics
+    listen_events={          # event handlers (optional)
+        'feature_on': lambda event: EmulatorEventBus.emit(
+            name='peak_load_start', data=event.data, source='balancer-1'
+        ),
+        'feature_off': lambda event: EmulatorEventBus.emit(
+            name='peak_load_end', data=event.data, source='balancer-1'
+        ),
+    },        
     metrics=[
+        # Generate load peaks
+        MetricConfig(
+            name='heavy_task_active',
+            metric_type=MetricType.GAUGE,
+            value_range=(0.0, 1.0),
+            update_interval=10.0, # metric update interval
+            scenario=Scenarios.feature_toggle, # feature toggle scenario
+            scenario_data={'start_time': 60.0, 'duration': 90.0, 'interval': 30.0, 'source': 'balancer-1'},
+            description='Heavy computational task status (0=off, 1=on)',
+        ),
+        # CPU load
         MetricConfig(
             name='cpu_usage_percent',
-            update_interval=10.0,  # generate every 10 seconds
-            listen_events=['load_peak_start', 'load_peak_end'],
-            scenario=Scenarios.load_peak_cpu,
-            description='CPU usage reacting to load peaks'
-        )
+            metric_type=MetricType.GAUGE,
+            value_range=(0.0, 100),
+            units='%',
+            update_interval=10.0,
+            listen_events=['peak_load_start', 'peak_load_end'],
+            scenario=Scenarios.switch_scenario_by_events,
+            scenario_data={
+                'default_scenario': 'random_in_range',
+                'default_scenario_data': {'value_range': (5.0, 25.0)},
+                'events_config': {
+                    'peak_load_start': {
+                        'scenario': 'random_in_range',
+                        'scenario_data': {'value_range': (75.0, 100.0)},
+                    },
+                    'peak_load_end': {},  # reset to default
+                },
+            },
+            description='CPU usage percentage',
+        ),
     ]
 )
 ```
@@ -276,7 +303,7 @@ cpu_metric = MetricConfig(
     default_value=15.0,
     units='%',
     update_interval=10.0,
-    listen_events=['load_peak_start', 'load_peak_end'],
+    listen_events=['load_peak_start', 'load_peak_end'],  # listen to events to change scenario behavior
     scenario=Scenarios.load_peak_cpu,
     description='CPU usage percentage'
 )
