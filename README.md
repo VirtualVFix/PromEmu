@@ -11,6 +11,14 @@ This module provides a comprehensive solution for emulating Prometheus metrics w
   - [Install Dependencies](#install-dependencies)
   - [Basic Usage](#basic-usage)
   - [Example Output](#example-output)
+- [Workflow](#workflow)
+  - [System Overview](#system-overview)
+  - [Emulation Lifecycle](#emulation-lifecycle)
+  - [Data Flow](#data-flow)
+  - [Component Interactions](#component-interactions)
+  - [Timing and Synchronization](#timing-and-synchronization)
+    - [Collecting Interval Hierarchy](#collecting-interval-hierarchy)
+- [Architecture](#architecture)
 - [Configuration](#configuration)
   - [Configuration Loader](#configuration-loader)
   - [Available Configurations](#available-configurations)
@@ -34,7 +42,6 @@ This module provides a comprehensive solution for emulating Prometheus metrics w
   - [Environment Configuration](#environment-configuration)
 - [Custom Scenarios](#custom-scenarios)
 - [Event System](#event-system)
-- [Architecture](#architecture)
 - [Pushgateway Job Management](#pushgateway-job-management)
   - [Single Job Pattern (Consolidated)](#single-job-pattern-consolidated)
   - [Multiple Jobs Pattern (Distributed)](#multiple-jobs-pattern-distributed)
@@ -157,6 +164,187 @@ python main.py --config hosts_load_with_peaks --config-args hosts_ttl=160 hosts_
   }
 }
 ...
+```
+
+## Workflow
+
+This section describes the complete workflow of the Prometheus Metrics Emulator, from configuration loading to metric generation and delivery.
+
+### System Overview
+
+The PromEmu workflow follows a structured approach to simulate realistic Prometheus metrics:
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Configuration │───▶│   MetricsMixer   │───▶│   Pushgateway   │
+│     Loading     │    │   Orchestration  │    │   Integration   │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+         │                     │                        │
+         ▼                     ▼                        ▼
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│  Host Creation  │    │ Metric Generation│    │   Prometheus    │
+│  & Validation   │    │ & Event Handling │    │   Collection    │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+### Emulation Lifecycle
+
+The emulation process follows these key phases:
+
+#### 1. **Initialization Phase**
+- **Configuration Loading**: Dynamic loading of configuration classes from `configs/` directory
+- **Validation**: Verification of host configurations, metric definitions, and scenario parameters
+- **Job Grouping**: Automatic grouping of hosts by `job_name` for Pushgateway organization
+- **Registry Creation**: Separate Prometheus registries for each job group
+- **Event Bus Setup**: Global async event system initialization
+
+#### 2. **Host Spawning Phase**
+- **Async Task Creation**: Each host runs in its own independent async task
+- **Metric Initialization**: Prometheus metrics (Gauge, Counter, Histogram) created per host
+- **Scenario Binding**: Scenario functions attached to metrics with their parameters
+- **Event Subscription**: Hosts subscribe to relevant events based on `listen_events` configuration
+- **TTL Scheduling**: Time-to-live timers set for automatic host lifecycle management
+
+#### 3. **Runtime Phase**
+- **Metric Generation**: Continuous value generation using scenario functions
+- **Event Coordination**: Cross-host communication through the event bus
+- **Value Updates**: Prometheus metrics updated at configured intervals
+- **State Management**: Persistent storage for scenario state and calculations
+- **Push Operations**: Periodic batch pushes to Pushgateway per job group
+
+#### 4. **Cleanup Phase**
+- **Host Termination**: Graceful shutdown when TTL expires or manual stop
+- **Registry Cleanup**: Optional removal of metrics from Pushgateway
+- **Resource Deallocation**: Async task cleanup and memory management
+
+### Data Flow
+
+The data flows through the system in the following pattern:
+
+```
+Configuration File
+       │
+       ▼
+┌─────────────────────────────────────────────────────┐
+│                    MetricsMixer                     │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │   Job A     │  │   Job B     │  │   Job C     │  │
+│  │             │  │             │  │             │  │
+│  │ ┌─────────┐ │  │ ┌─────────┐ │  │ ┌─────────┐ │  │
+│  │ │ Host 1  │ │  │ │ Host 3  │ │  │ │ Host 5  │ │  │
+│  │ │ Host 2  │ │  │ │ Host 4  │ │  │ │         │ │  │
+│  │ └─────────┘ │  │ └─────────┘ │  │ └─────────┘ │  │
+│  └─────────────┘  └─────────────┘  └─────────────┘  │
+└─────────────────────────────────────────────────────┘
+        │                   │                  │
+        ▼                   ▼                  ▼
+  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+  │ Prometheus  │    │ Prometheus  │    │ Prometheus  │
+  │ Registry A  │    │ Registry B  │    │ Registry C  │
+  └─────────────┘    └─────────────┘    └─────────────┘
+       │                    │                    │
+       └────────────────────┼────────────────────┘
+                            ▼
+                   ┌─────────────────┐
+                   │   Pushgateway   │
+                   │                 │
+                   │  Job A: Metrics │
+                   │  Job B: Metrics │
+                   │  Job C: Metrics │
+                   └─────────────────┘
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │   Prometheus    │
+                   │    Server       │
+                   └─────────────────┘
+                            │
+                            ▼
+                   ┌─────────────────┐
+                   │     Grafana     │
+                   │   Dashboards    │
+                   └─────────────────┘
+```
+
+### Component Interactions
+
+#### **Configuration → MetricsMixer**
+- Configuration classes inherit from `BaseEmulatorConfig`
+- `build()` method returns `MixerConfig` with host definitions
+- Dynamic parameter passing through `--config-args`
+- Environment variable overrides via `PME_*` prefixes
+
+#### **MetricsMixer → EmulatedHost**
+- Async task spawning for each host configuration
+- Job grouping logic based on `job_name` or `default_job_name`
+- Callback registration for metric updates
+- TTL management and automatic cleanup
+
+#### **EmulatedHost → EmulatedMetric**
+- Metric creation using Prometheus client library
+- Scenario function binding with parameter injection
+- Update interval scheduling and value generation
+- Event subscription and handler registration
+
+#### **EmulatedMetric → Scenarios**
+- Context object creation with current state
+- Scenario function execution with parameters
+- State persistence through `context.storage`
+- Event-driven behavior modifications
+
+#### **Event System Coordination**
+- Global `EmulatorEventBus` for cross-host communication
+- Async event emission and subscription
+- Event-driven scenario switching
+- Coordinated behavior patterns (e.g., load peaks)
+
+#### **Pushgateway Integration**
+- Separate push operations per job group
+- Batch metric updates for efficiency
+- Configurable push intervals
+- Optional cleanup on start/finish
+
+#### **Monitoring Stack Integration**
+- Pushgateway receives metrics from emulator
+- Prometheus scrapes Pushgateway endpoints
+- Grafana visualizes metrics through Prometheus
+- Pre-configured dashboards in Docker setup
+
+### **Timing and Synchronization**
+- **Host-Level Timing**: Each host has independent `start_time` delays and `interval_range` for reporting cycles
+- **Metric-Level Timing**: Individual metrics have their own `start_time`, `update_interval`, and `ttl` parameters
+- **Realistic Desynchronization**: Hosts use randomized intervals within configured ranges to simulate real-world timing variations
+- **Independent Lifecycles**: Metrics can start/stop independently of their host based on individual timing configurations to simulate application behavior
+- **Staggered Startup**: Different hosts can be configured to start at different times, creating realistic deployment patterns
+
+#### **Collecting Interval Hierarchy**
+The system uses a three-tier interval scheme for realistic metric collection:
+
+```
+MetricsMixer (push_interval: 15.0s)
+    │
+    └── EmulatedHost (interval_range: 12.0-17.0s)
+            │
+            └── EmulatedMetric (update_interval: 10.0s)
+```
+
+- **Mixer Level**: Controls how often aggregated metrics are pushed to Pushgateway (`push_interval`)
+- **Host Level**: Each host reports metrics at randomized intervals within `interval_range` to simulate real host behavior
+- **Metric Level**: Individual metrics generate new values based on their own `update_interval`, independent of host reporting
+
+## Architecture
+
+```
+MetricsMixer
+├── Job Groups (grouped by job_name)
+│   ├── CollectorRegistry (per job)
+│   └── EmulatedHost (async task per host)
+│       ├── EmulatedMetric (multiple per host)
+│       │   ├── Scenario function
+│       │   └── Metric value generation
+│       └── Callback to mixer
+├── Centralized Pushgateway Communication
+└── EventBus (global async event system)
 ```
 
 ## Configuration
@@ -804,21 +992,6 @@ async def handle_event(event: Event):
     print(f"Received: {event.name} from {event.source}")
 
 await EmulatorEventBus.subscribe('custom_event', handle_event)
-```
-
-## Architecture
-
-```
-MetricsMixer
-├── Job Groups (grouped by job_name)
-│   ├── CollectorRegistry (per job)
-│   └── EmulatedHost (async task per host)
-│       ├── EmulatedMetric (multiple per host)
-│       │   ├── Scenario function
-│       │   └── Metric value generation
-│       └── Callback to mixer
-├── Centralized Pushgateway Communication
-└── EventBus (global async event system)
 ```
 
 ## Pushgateway Job Management
